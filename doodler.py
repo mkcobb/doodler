@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+dt      = 0.01; # Seconds
+t_final = 10. ; # Seconds
+
 LA1 = 1
 LA2 = 0.5
 LA3 = 0.75
@@ -10,20 +13,19 @@ LB2 = 0.5
 LB3 = 0.75
 
 thetaA1 = np.deg2rad(90)
-thetaA2 = np.deg2rad(0)
+thetaB1 = np.deg2rad(45)
 
-thetaB1 = np.deg2rad(0)
-thetaB2 = np.deg2rad(0)
+thetaA2_init = np.deg2rad(0)
+thetaB2_init = np.deg2rad(0)
 
-r_A1_O_O  = np.array([LA1*np.cos(thetaA1), LA1*np.sin(thetaA1)])
-r_A2_A1_O = np.array([LA2*np.cos(thetaA2), LA2*np.sin(thetaA2)])
+Motor_A_params = np.array([[1 , 0.1, 0],[1 , 0.1, 0],[1 , 0.1, 0]]) 
+Motor_B_params = np.array([[1 , 0.1, 0],[1 , 0.1, 0],[1 , 0.1, 0]]) 
+Motor_T_params = np.array([[1 , 0.1, 0],[1 , 0.1, 0],[1 , 0.1, 0]]) 
 
-r_A2_O_O = r_A1_O_O + r_A2_A1_O
-
-r_B1_O_O  = np.array([LB1*np.cos(thetaB1), LB1*np.sin(thetaB1)])
-r_B2_B1_O = np.array([LB2*np.cos(thetaB2), LB2*np.sin(thetaB2)])
-
-r_B2_O_O = r_B1_O_O + r_B2_B1_O
+def find_arm_endpoint(LA1, LA2, thetaA1, thetaA2):
+    r1 = np.array([LA1*np.cos(thetaA1), LA1*np.sin(thetaA1)])
+    r2 = np.array([LA2*np.cos(thetaA2), LA2*np.sin(thetaA2)])
+    return r1 + r2 
 
 def find_intersection(C0,C1,r0,r1):
     x0 = C0[0]
@@ -64,26 +66,114 @@ def find_intersection(C0,C1,r0,r1):
         else:
             return np.array([xi2, yi2])
 
-def plot_circles(C0, r0, C1, r1 , ri):
-    fig, ax = plt.subplots()
-    plt.plot([0,r_A1_O_O[0]],[0,r_A1_O_O[1]])
-    plt.plot([0,r_B1_O_O[0]],[0,r_B1_O_O[1]])
-    plt.plot([r_A1_O_O[0],r_A2_O_O[0]],[r_A1_O_O[1],r_A2_O_O[1]])
-    plt.plot([r_B1_O_O[0],r_B2_O_O[0]],[r_B1_O_O[1],r_B2_O_O[1]])
-    if ri is not None:
-        plt.plot(ri[0], ri[1], 'go', label='Intersection Point')
-    circle1 = plt.Circle(C0, r0, color='blue', fill=False)
-    circle2 = plt.Circle(C1, r1, color='red', fill=False)
-    ax.add_artist(circle1)
-    ax.add_artist(circle2)
-    ax.set_aspect('equal', adjustable='datalim')
-    plt.xlim(-2, 2)
-    plt.ylim(-2, 2)
-    plt.grid()
+def plot_circles(ri_O_O, ri_O_T):
+    fig, ax = plt.subplots(1,2, figsize=(12,6))
+    ax[0].plot(ri_O_O[:,0], ri_O_O[:,1], 'r', label='Intersection in O frame')
+    ax[1].plot(ri_O_T[:,0], ri_O_T[:,1], 'b', label='Intersection in T frame')
+    ax[0].set_xlabel('X')
+    ax[1].set_xlabel('X')
+    ax[0].set_ylabel('Y')
+    ax[1].set_ylabel('Y')
+    ax[0].set_title('O Frame Spirograph')
+    ax[1].set_title('T Frame Spirograph')
+    ax[0].axis('equal')
+    ax[1].axis('equal')
+    ax[0].grid()
+    ax[1].grid()
     plt.show()
-         
+    
+
+def step_motor(theta,t,dt,motor_params):
+    # Steps motor position forwards in time by 1 time step, dt
+    
+    # Calculate motor speed
+    omega = \
+        motor_params[0,0]*np.sin(motor_params[0,1]*t + motor_params[0,2]) + \
+        motor_params[1,0]*np.sin(motor_params[1,1]*t + motor_params[1,2]) + \
+        motor_params[2,0]*np.sin(motor_params[2,1]*t + motor_params[2,2]) 
+    # Integrate speed to get new angle
+    return theta + omega * dt
+
+def simulate(r_A1_O_O, r_B1_O_O, LA2, LB2,LA3,LB3,
+             t_final,thetaA2_init,thetaB2_init,
+             A_motor_params,B_motor_params,T_motor_params):
+
+    # Initialize time vector and number of time steps
+    t  = np.arange(0, t_final, dt)
+    nt = len(t)
+
+    # Initialize motor angle arrays
+    thetaA2 = np.zeros(nt)
+    thetaB2 = np.zeros(nt)
+    thetaT  = np.zeros(nt)
+
+    # Initialize intersection point arrays
+    ri_O_O = np.zeros((nt, 2))
+    ri_O_T = np.zeros((nt, 2))
+
+    # Set initial motor angles
+    thetaA2[0] = thetaA2_init
+    thetaB2[0] = thetaB2_init
+    thetaT[0]  = 0.0
+
+
+    # Flag to indicate if the simulation failed (e.g., no intersection found)
+    failed = False
+
+    # Find the initial intersection point at t=0
+    r_A2_O_O    = find_arm_endpoint(LA1, LA2, thetaA1, thetaA2[0])
+    r_B2_O_O    = find_arm_endpoint(LB1, LB2, thetaB1, thetaB2[0])
+    ri_O_O_temp = find_intersection(r_A2_O_O, r_B2_O_O, LA3, LB3)
+
+    if ri_O_O_temp is None:
+        # No solution, return nothing
+        failed = True
+        return failed , t , ri_O_O , ri_O_T
+    
+    ri_O_O[0,:] = ri_O_O_temp
+
+    # Compute the initial position of the intersection point in the T frame
+    R_T_O = np.array([[np.cos(thetaT[0]), -np.sin(thetaT[0])],
+                      [np.sin(thetaT[0]),  np.cos(thetaT[0])]])
+    ri_O_T[0,:] = R_T_O @ ri_O_O[0,:]
+
+    # Loop over all time steps in the simulation
+    for ii in range(int(1),int(nt)):
+        # Update time and motor angles
+        thetaA2[ii] = step_motor(thetaA2[ii-1],t[ii],dt,A_motor_params)
+        thetaB2[ii] = step_motor(thetaB2[ii-1],t[ii],dt,B_motor_params)
+        thetaT[ii]  = step_motor(thetaT[ii-1] ,t[ii],dt,T_motor_params)
+
+        # Find the new intersection point in the O frame
+        r_A2_O_O = find_arm_endpoint(LA1, LA2, thetaA1, thetaA2[ii])
+        r_B2_O_O = find_arm_endpoint(LB1, LB2, thetaB1, thetaB2[ii])
+        ri_O_O_temp   = find_intersection(r_A2_O_O, r_B2_O_O, LA3, LB3) 
+
+        # If no intersection is found, the simulation has failed
+        if ri_O_O_temp is None:
+            # No solution, return nothing
+            failed = True
+            return failed , t , ri_O_O , ri_O_T
+        
+        ri_O_O[ii,:] = ri_O_O_temp
+
+        # Compute the position of the intersection point in the T frame
+        R_T_O = np.array([[np.cos(thetaT[ii]), -np.sin(thetaT[ii])],
+                          [np.sin(thetaT[ii]),  np.cos(thetaT[ii])]])
+        ri_O_T[ii,:] = R_T_O @ ri_O_O[ii,:]
+        
+    return failed , t , ri_O_O , ri_O_T
+
 if __name__ == "__main__":
-    r_intersect = find_intersection(r_A2_O_O, r_B2_O_O, LA3, LB3)
-    print("Intersection point:", r_intersect)
-    plot_circles(r_A2_O_O, LA3, r_B2_O_O, LB3,r_intersect)
+    r_A1_O_O = np.array([LA1*np.cos(thetaA1), LA1*np.sin(thetaA1)])
+    r_B1_O_O = np.array([LB1*np.cos(thetaB1), LB1*np.sin(thetaB1)])
+
+    failed , t , ri_O_O , ri_O_T = simulate(r_A1_O_O, r_B1_O_O, LA2, LB2,LA3,LB3,
+                                             t_final,thetaA2_init,thetaB2_init,
+                                             Motor_A_params,Motor_A_params,Motor_A_params)
+    print(t)
+    if not failed:
+        plot_circles(ri_O_O, ri_O_T)
+    elif failed:
+        print(f"Simulation failed: No intersection found at t = {t[-1]} s.")
 
