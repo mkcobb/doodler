@@ -1,30 +1,49 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-dt      = 0.01; # Seconds
-t_final = 10. ; # Seconds
+# Notes on rough dimensions:
+# Assuming the paper is 11 inches mounted on a circular rotating platform, the minimum radius of the platform needs to be about 7.7 inches to ensure the entire paper is on there.
+# In order to give some wiggle room so we can shift the paper around to be off-center a little, make the platform radius 10 inches.  
+# This means the minimum values of LA1 and LB1 are 10 inches.
+# LA3 + LB3 must be greater than LA2 + LB2 + distance between fixed arm end points for feasibility.
+# However, if LA3 + LB3 = LA2 + LB3 + dist btwn fixed arm end points, then the pen will only be able to reach one point on the paper.
+# So we need LA3 + LB3 to be sufficiently larger than LA2 + LB2 + distance between fixed arm end points to give us a good range of motion for the pen. 
 
-LA1 = 1
-LA2 = 0.5
-LA3 = 0.75
+# Motor Parameters:
+# The expression for motor speed is omega = c1 + c2*sin(c3*t + c4) where c1, c2, c3, and c4 are the parameters for each motor.
 
-LB1 = 1
-LB2 = 0.5
-LB3 = 0.75
+dt      = 0.01 # Seconds
+t_final = 600   # Seconds
 
-thetaA1 = np.deg2rad(90)
-thetaB1 = np.deg2rad(45)
+LA1 = 14 # Length of arm 1 for motor A in inches
+LA2 = 4  # Length of arm 2 for motor A in inches
+LA3 = 16 # Length of arm 3 for motor A in inches
+thetaA1        = np.deg2rad(90) # Angle of arm 1 for motor A in radians
+thetaA2_init   = np.deg2rad(90) # Initial angle of arm 2 for motor A in radians.
+Motor_A_params = np.array([np.deg2rad( 10 ),np.deg2rad(0),np.deg2rad(0.1) ,0])  
 
-thetaA2_init = np.deg2rad(0)
-thetaB2_init = np.deg2rad(0)
+LB1 = 12 # Length of arm 1 for motor B in inches
+LB2 = 1  # Length of arm 2 for motor B in inches   
+LB3 = 15 # Length of arm 3 for motor B in inches
+thetaB1        = np.deg2rad(0)     # Angle of arm 1 for motor B in radians
+thetaB2_init   = np.deg2rad(-180)  # Initial angle of arm 2 for motor B in radians.
+Motor_B_params = np.array([np.deg2rad( 60 ),0,np.deg2rad(0.1) ,0]) 
 
-Motor_A_params = np.array([[1 , 0.1, 0],[1 , 0.1, 0],[1 , 0.1, 0]]) 
-Motor_B_params = np.array([[1 , 0.1, 0],[1 , 0.1, 0],[1 , 0.1, 0]]) 
-Motor_T_params = np.array([[1 , 0.1, 0],[1 , 0.1, 0],[1 , 0.1, 0]]) 
+Motor_T_params = np.array([np.deg2rad( 1 ),0,0     ,0]) 
 
-def find_arm_endpoint(LA1, LA2, thetaA1, thetaA2):
-    r1 = np.array([LA1*np.cos(thetaA1), LA1*np.sin(thetaA1)])
-    r2 = np.array([LA2*np.cos(thetaA2), LA2*np.sin(thetaA2)])
+r_A1_O_O = np.array([LA1*np.cos(thetaA1), LA1*np.sin(thetaA1)]) # Position of end of arm 1 for motor A in O frame
+r_B1_O_O = np.array([LB1*np.cos(thetaB1), LB1*np.sin(thetaB1)]) # Position of end of arm 1 for motor B in O frame
+
+d_A1_B1 = np.linalg.norm(r_A1_O_O - r_B1_O_O) # Distance between the end of arm 1 for motor A and motor B in inches
+
+print(f"Distance between arm 1 endpoints: {d_A1_B1:.2f} inches")
+print(f"Minimum total arm 3 lengths     : {d_A1_B1 + LA2 + LB2:.2f} inches")
+print(f"Actual total arm 3 lengths      : {LA3 + LB3:.2f} inches")
+
+
+def find_arm_endpoint(L1, L2, theta1, theta2):
+    r1 = np.array([L1*np.cos(theta1), L1*np.sin(theta1)])
+    r2 = np.array([L2*np.cos(theta2), L2*np.sin(theta2)])
     return r1 + r2 
 
 def find_intersection(C0,C1,r0,r1):
@@ -66,10 +85,27 @@ def find_intersection(C0,C1,r0,r1):
         else:
             return np.array([xi2, yi2])
 
-def plot_circles(ri_O_O, ri_O_T):
+def plot_motor_angles(t, thetaA2, thetaB2, thetaT):
+    plt.figure(figsize=(10,6))
+    plt.plot(t, np.rad2deg(thetaA2), label='Theta A2 (degrees)', linewidth=0.1)
+    plt.plot(t, np.rad2deg(thetaB2), label='Theta B2 (degrees)', linewidth=0.1)
+    plt.plot(t, np.rad2deg(thetaT), label='Theta T (degrees)', linewidth=0.1)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Angle (degrees)')
+    plt.title('Motor Angles Over Time')
+    plt.legend()
+    plt.grid()
+
+def plot_spirograph(ri_O_O, ri_O_T):
     fig, ax = plt.subplots(1,2, figsize=(12,6))
-    ax[0].plot(ri_O_O[:,0], ri_O_O[:,1], 'r', label='Intersection in O frame')
-    ax[1].plot(ri_O_T[:,0], ri_O_T[:,1], 'b', label='Intersection in T frame')
+    ax[0].plot(ri_O_O[:,0], ri_O_O[:,1], 'r', label='Intersection in O frame', linewidth=0.1)
+    ax[1].plot(ri_O_T[:,0], ri_O_T[:,1], 'b', label='Intersection in T frame', linewidth=0.1)
+    ax[0].plot(0, 0, 'ko', label='Origin O')
+    ax[1].plot(0, 0, 'ko', label='Origin O')
+    ax[0].plot([5.5, 5.5, -5.5, -5.5, 5.5], [-5.5, 5.5, 5.5, -5.5, -5.5], 'k', label='Paper Boundary', linewidth=0.5)
+    ax[1].plot([5.5, 5.5, -5.5, -5.5, 5.5], [-5.5, 5.5, 5.5, -5.5, -5.5], 'k', label='Paper Boundary', linewidth=0.5)
+    ax[0].legend()
+    ax[1].legend()
     ax[0].set_xlabel('X')
     ax[1].set_xlabel('X')
     ax[0].set_ylabel('Y')
@@ -80,7 +116,6 @@ def plot_circles(ri_O_O, ri_O_T):
     ax[1].axis('equal')
     ax[0].grid()
     ax[1].grid()
-    plt.show()
     
 
 def step_motor(theta,t,dt,motor_params):
@@ -88,9 +123,9 @@ def step_motor(theta,t,dt,motor_params):
     
     # Calculate motor speed
     omega = \
-        motor_params[0,0]*np.sin(motor_params[0,1]*t + motor_params[0,2]) + \
-        motor_params[1,0]*np.sin(motor_params[1,1]*t + motor_params[1,2]) + \
-        motor_params[2,0]*np.sin(motor_params[2,1]*t + motor_params[2,2]) 
+        motor_params[0] + \
+        motor_params[1]*np.sin(motor_params[2]*t + motor_params[3])  
+    
     # Integrate speed to get new angle
     return theta + omega * dt
 
@@ -116,7 +151,6 @@ def simulate(r_A1_O_O, r_B1_O_O, LA2, LB2,LA3,LB3,
     thetaB2[0] = thetaB2_init
     thetaT[0]  = 0.0
 
-
     # Flag to indicate if the simulation failed (e.g., no intersection found)
     failed = False
 
@@ -128,7 +162,7 @@ def simulate(r_A1_O_O, r_B1_O_O, LA2, LB2,LA3,LB3,
     if ri_O_O_temp is None:
         # No solution, return nothing
         failed = True
-        return failed , t , ri_O_O , ri_O_T
+        return failed , t , thetaA2, thetaB2, thetaT, ri_O_O , ri_O_T
     
     ri_O_O[0,:] = ri_O_O_temp
 
@@ -153,7 +187,7 @@ def simulate(r_A1_O_O, r_B1_O_O, LA2, LB2,LA3,LB3,
         if ri_O_O_temp is None:
             # No solution, return nothing
             failed = True
-            return failed , t , ri_O_O , ri_O_T
+            return failed , t , thetaA2, thetaB2, thetaT, ri_O_O , ri_O_T
         
         ri_O_O[ii,:] = ri_O_O_temp
 
@@ -162,18 +196,21 @@ def simulate(r_A1_O_O, r_B1_O_O, LA2, LB2,LA3,LB3,
                           [np.sin(thetaT[ii]),  np.cos(thetaT[ii])]])
         ri_O_T[ii,:] = R_T_O @ ri_O_O[ii,:]
         
-    return failed , t , ri_O_O , ri_O_T
+    return failed , t , thetaA2, thetaB2, thetaT, ri_O_O, ri_O_T
 
 if __name__ == "__main__":
     r_A1_O_O = np.array([LA1*np.cos(thetaA1), LA1*np.sin(thetaA1)])
     r_B1_O_O = np.array([LB1*np.cos(thetaB1), LB1*np.sin(thetaB1)])
 
-    failed , t , ri_O_O , ri_O_T = simulate(r_A1_O_O, r_B1_O_O, LA2, LB2,LA3,LB3,
-                                             t_final,thetaA2_init,thetaB2_init,
-                                             Motor_A_params,Motor_A_params,Motor_A_params)
-    print(t)
-    if not failed:
-        plot_circles(ri_O_O, ri_O_T)
-    elif failed:
-        print(f"Simulation failed: No intersection found at t = {t[-1]} s.")
+    failed , t , thetaA2, thetaB2, thetaT, ri_O_O , ri_O_T = simulate(
+        r_A1_O_O, r_B1_O_O, 
+        LA2, LB2 , LA3 , LB3 ,
+        t_final , thetaA2_init , thetaB2_init ,
+        Motor_A_params , Motor_B_params , Motor_T_params)
 
+    if failed:
+        print("Simulation failed: No intersection found.")
+    else:
+        plot_spirograph(ri_O_O, ri_O_T)
+        plot_motor_angles(t, thetaA2, thetaB2, thetaT)
+        plt.show()
